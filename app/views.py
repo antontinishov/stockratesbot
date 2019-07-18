@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime
 
-from aiohttp import web, ClientSession
+from aiohttp import ClientSession
 from lxml import html
 
 from config.settings import BOT_TOKEN
@@ -11,45 +11,30 @@ logger = logging.getLogger(__name__)
 
 base_url = "https://api.telegram.org/bot{}/".format(BOT_TOKEN)
 send_message = "{}sendMessage".format(base_url)
+edit_message_text = "{}editMessageText".format(base_url)
+delete_message = "{}deleteMessage".format(base_url)
 headers = {'content-type': 'application/json'}
 
 
-async def process_json(request):
-	if request.method == "POST":
-		body = await request.text()
-		# TODO Not text message case
-		if body:
-			data = json.loads(body, encoding="utf-8")
-			user_request = data["message"]["text"]
-			if "/start" in user_request:
-				await start(data=data)
-			elif "Курсы валют" in user_request:
-				await exchange_rates(data=data)
-			elif "Курс евро 💶" in user_request:
-				await euro_rates(data=data, request=request)
-			elif "Курс доллара 💵" in user_request:
-				await dollar_rates(data=data, request=request)
-			else:
-				await start(data=data)
-		else:
-			return web.Response(status=204)
-
-		return web.Response(status=200)
-	else:
-		return web.Response(status=405)
-
-
 async def start(data):
-	keyboard = json.dumps({
-		"resize_keyboard": True,
-		"keyboard": [
-			["Курсы акций"],
-			["Курсы валют"],
-		]
-	})
+	keyboard = await keyboard_render(buttons_list=[["Курсы валют 💹"], ["Курсы акций 📈"]])
 	post_data = json.dumps({
 		"chat_id": data["message"]["from"]["id"],
-		"text": "Добро пожаловать в бота!",
+		"text": "{}, добро пожаловать в бота!\n\n"
+		        "С моей помощью ты cможешь быстро узнать "
+		        "\n - курсы валют 💹"
+		        "\n - котировки акций основных российских компаний 🇷🇺".format(data["message"]["from"]["first_name"]),
+		"reply_markup": keyboard
+	})
+	async with ClientSession(headers=headers) as session:
+		await session.post(url=send_message, data=post_data)
+
+
+async def incorrect_request(data):
+	keyboard = await keyboard_render(buttons_list=[["Курсы валют 💹"], ["Курсы акций 📈"]])
+	post_data = json.dumps({
+		"chat_id": data["message"]["from"]["id"],
+		"text": "Ваш запрос мне непонятен 😔 \nПока что я могу предоставить информацию только по котировкам валют и акций",
 		"reply_markup": keyboard
 	})
 	async with ClientSession(headers=headers) as session:
@@ -57,16 +42,10 @@ async def start(data):
 
 
 async def exchange_rates(data):
-	keyboard = json.dumps({
-		"resize_keyboard": True,
-		"keyboard": [
-			["Курс евро 💶"],
-			["Курс доллара 💵"],
-		]
-	})
+	keyboard = await keyboard_render(buttons_list=[["Курс евро 💶"], ["Курс доллара 💵"]])
 	post_data = json.dumps({
 		"chat_id": data["message"]["from"]["id"],
-		"text": "Выберите интересующий курс валюты",
+		"text": "Выбери интересующий курс валюты",
 		"reply_markup": keyboard
 	})
 	async with ClientSession(headers=headers) as session:
@@ -74,25 +53,26 @@ async def exchange_rates(data):
 
 
 async def euro_rates(data, request):
+	keyboard = await keyboard_render(buttons_list=[["Курс евро 💶"], ["Курс доллара 💵"]])
+	text = await render_exchange_text()
+
+	await wait_message(data=data)
+
 	redis_data = await check_redis_key(redis_key="euro_rates", request=request)
 	if redis_data:
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
-			"text": "Курс валюты на {date}\n"
-					"ЦБ: <b>{cb_dollar} ₽</b>\n\n"
-			        "Тинькофф Банк: <b>{tinkoff_dollar} ₽</b>\n"
-			        "Сбербанк: <b>{sberbank_dollar} ₽</b>\n"
-			        "Банк ВТБ: <b>{vtb_dollar} ₽</b>\n"
-			        "Банк Санкт-Петербург: <b>{spbbank_dollar} ₽</b>\n\n"
-			        "Все банки: {all_banks}"
-			        "".format(date=datetime.now().strftime("%d.%m.%Y %H:%M"),
-							  cb_dollar=redis_data["cbr"],
-			                  tinkoff_dollar=redis_data["tinkoff"],
-			                  sberbank_dollar=redis_data["sberbank"],
-			                  vtb_dollar=redis_data["vtb"],
-			                  spbbank_dollar=redis_data["spbbank"],
-			                  all_banks="https://www.banki.ru/products/currency/cash/usd/sankt-peterburg/#sort=sale&order=asc"),
-			"parse_mode": "HTML"
+			"text": text.format(
+				date=datetime.now().strftime("%d.%m.%Y %H:%M"),
+				cb=redis_data["cbr"],
+				tinkoff=redis_data["tinkoff"],
+				sberbank=redis_data["sberbank"],
+				vtb=redis_data["vtb"],
+				spbbank=redis_data["spbbank"],
+				all_banks="https://www.banki.ru/products/currency/cash/usd/sankt-peterburg/#sort=sale&order=asc"),
+			"parse_mode": "HTML",
+			"disable_web_page_preview": True,
+			"reply_markup": keyboard
 		})
 		async with ClientSession(headers=headers) as session:
 			await session.post(url=send_message, data=post_data)
@@ -115,7 +95,7 @@ async def euro_rates(data, request):
 			async with session.get(url=spbbank_eur) as resp:
 				spb_bank_page = await resp.text()
 
-		cbr_rate_euro = json.loads(cbr_answer)["Valute"]["EUR"]["Value"]
+		cbr_rate_euro = round(json.loads(cbr_answer)["Valute"]["EUR"]["Value"], 2)
 
 		tinkoff_euro_rates = tinkoff_api_answer_eur["payload"]["rates"]
 		tinkoff_euro_rate = "{:.2f}".format(next(item["sell"] for item in tinkoff_euro_rates if item["category"] == "DebitCardsTransfers"))
@@ -129,19 +109,17 @@ async def euro_rates(data, request):
 
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
-			"text": "ЦБ: <b>{cb_eur} ₽</b>\n\n"
-			        "Тинькофф Банк: <b>{tinkoff_eur} ₽</b>\n"
-			        "Сбербанк: <b>{sberbank_eur} ₽</b>\n"
-			        "Банк ВТБ: <b>{vtb_eur} ₽</b>\n"
-			        "Банк Санкт-Петербург: <b>{spbbank_eur} ₽</b>\n\n"
-			        "Все банки: {all_banks}"
-			        "".format(cb_eur=cbr_rate_euro,
-			                  tinkoff_eur=tinkoff_euro_rate,
-			                  sberbank_eur=sberbank_euro_rate,
-			                  vtb_eur=vtb_euro_rate,
-			                  spbbank_eur=spbbank_euro_rate,
-			                  all_banks="https://www.banki.ru/products/currency/cash/eur/sankt-peterburg/#sort=sale&order=asc"),
-			"parse_mode": "HTML"
+			"text": text.format(
+				date=datetime.now().strftime("%d.%m.%Y %H:%M"),
+				cb=cbr_rate_euro,
+				tinkoff=tinkoff_euro_rate,
+				sberbank=sberbank_euro_rate,
+				vtb=vtb_euro_rate,
+				spbbank=spbbank_euro_rate,
+				all_banks="https://www.banki.ru/products/currency/cash/eur/sankt-peterburg/#sort=sale&order=asc"),
+			"parse_mode": "HTML",
+			"disable_web_page_preview": True,
+			"reply_markup": keyboard
 		})
 		async with ClientSession(headers=headers) as session:
 			await session.post(url=send_message, data=post_data)
@@ -155,27 +133,30 @@ async def euro_rates(data, request):
 		}
 		await save_to_redis(redis_key="euro_rates", data_rates=data_rates, request=request)
 
+	await del_message(data=data)
+
 
 async def dollar_rates(data, request):
+	keyboard = await keyboard_render(buttons_list=[["Курс евро 💶"], ["Курс доллара 💵"]])
+	text = await render_exchange_text()
+
+	await wait_message(data=data)
+
 	redis_data = await check_redis_key(redis_key="dollar_rates", request=request)
 	if redis_data:
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
-			"text": "Курс валюты на {date}\n"
-					"ЦБ: <b>{cb_dollar} ₽</b>\n\n"
-			        "Тинькофф Банк: <b>{tinkoff_dollar} ₽</b>\n"
-			        "Сбербанк: <b>{sberbank_dollar} ₽</b>\n"
-			        "Банк ВТБ: <b>{vtb_dollar} ₽</b>\n"
-			        "Банк Санкт-Петербург: <b>{spbbank_dollar} ₽</b>\n\n"
-			        "Все банки: {all_banks}"
-			        "".format(date=datetime.now().strftime("%d.%m.%Y %H:%M"),
-							  cb_dollar=redis_data["cbr"],
-			                  tinkoff_dollar=redis_data["tinkoff"],
-			                  sberbank_dollar=redis_data["sberbank"],
-			                  vtb_dollar=redis_data["vtb"],
-			                  spbbank_dollar=redis_data["spbbank"],
-			                  all_banks="https://www.banki.ru/products/currency/cash/usd/sankt-peterburg/#sort=sale&order=asc"),
-			"parse_mode": "HTML"
+			"text": text.format(
+				date=datetime.now().strftime("%d.%m.%Y %H:%M"),
+				cb=redis_data["cbr"],
+				tinkoff=redis_data["tinkoff"],
+				sberbank=redis_data["sberbank"],
+				vtb=redis_data["vtb"],
+				spbbank=redis_data["spbbank"],
+				all_banks="https://www.banki.ru/products/currency/cash/usd/sankt-peterburg/#sort=sale&order=asc"),
+			"parse_mode": "HTML",
+			"disable_web_page_preview": True,
+			"reply_markup": keyboard
 		})
 		async with ClientSession(headers=headers) as session:
 			await session.post(url=send_message, data=post_data)
@@ -198,7 +179,7 @@ async def dollar_rates(data, request):
 			async with session.get(url=spbbank_dollar) as resp:
 				spb_bank_page = await resp.text()
 
-		cbr_rate_dollar = json.loads(cbr_answer)["Valute"]["USD"]["Value"]
+		cbr_rate_dollar = round(json.loads(cbr_answer)["Valute"]["USD"]["Value"], 2)
 
 		tinkoff_dollar_rates = tinkoff_api_answer_dollar["payload"]["rates"]
 		tinkoff_dollar_rate = "{0:.2f}".format(next(item["sell"] for item in tinkoff_dollar_rates if item["category"] == "DebitCardsTransfers"))
@@ -212,21 +193,17 @@ async def dollar_rates(data, request):
 
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
-			"text": "Курс валюты на {date}\n"
-				    "ЦБ: <b>{cb_dollar} ₽</b>\n\n"
-			        "Тинькофф Банк: <b>{tinkoff_dollar} ₽</b>\n"
-			        "Сбербанк: <b>{sberbank_dollar} ₽</b>\n"
-			        "Банк ВТБ: <b>{vtb_dollar} ₽</b>\n"
-			        "Банк Санкт-Петербург: <b>{spbbank_dollar} ₽</b>\n\n"
-			        "Все банки: {all_banks}"
-			        "".format(date=datetime.now().strftime("%d.%m.%Y %H:%M"),
-				              cb_dollar=cbr_rate_dollar,
-			                  tinkoff_dollar=tinkoff_dollar_rate,
-			                  sberbank_dollar=sberbank_dollar_rate,
-			                  vtb_dollar=vtb_dollar_rate,
-			                  spbbank_dollar=spbbank_dollar_rate,
-			                  all_banks="https://www.banki.ru/products/currency/cash/usd/sankt-peterburg/#sort=sale&order=asc"),
-			"parse_mode": "HTML"
+			"text": text.format(
+				date=datetime.now().strftime("%d.%m.%Y %H:%M"),
+				cb=cbr_rate_dollar,
+				tinkoff=tinkoff_dollar_rate,
+				sberbank=sberbank_dollar_rate,
+				vtb=vtb_dollar_rate,
+				spbbank=spbbank_dollar_rate,
+				all_banks="https://www.banki.ru/products/currency/cash/usd/sankt-peterburg/#sort=sale&order=asc"),
+			"parse_mode": "HTML",
+			"disable_web_page_preview": True,
+			"reply_markup": keyboard
 		})
 		async with ClientSession(headers=headers) as session:
 			await session.post(url=send_message, data=post_data)
@@ -240,6 +217,8 @@ async def dollar_rates(data, request):
 		}
 
 		await save_to_redis(redis_key="dollar_rates", data_rates=data_rates, request=request)
+
+	await del_message(data=data)
 
 
 async def check_redis_key(redis_key, request):
@@ -257,3 +236,38 @@ async def save_to_redis(redis_key, data_rates, request):
 		await redis_con.hmset_dict(redis_key, data_rates)
 		await redis_con.expire(redis_key, 60)
 	return 0
+
+
+async def keyboard_render(buttons_list: list):
+	return json.dumps({
+		"resize_keyboard": True,
+		"keyboard": buttons_list
+	})
+
+
+async def render_exchange_text():
+	return "Курс валюты на {date}\n" \
+	       "ЦБ: <b>{cb} ₽</b>\n\n" \
+	       "Тинькофф Банк: <b>{tinkoff} ₽</b>\n" \
+	       "Сбербанк: <b>{sberbank} ₽</b>\n" \
+	       "Банк ВТБ: <b>{vtb} ₽</b>\n" \
+	       "Банк Санкт-Петербург: <b>{spbbank} ₽</b>\n\n" \
+	       "Все банки: {all_banks}"
+
+
+async def wait_message(data):
+	post_data = json.dumps({
+		"chat_id": data["message"]["from"]["id"],
+		"text": "Собираю информацию по курсу..."
+	})
+	async with ClientSession(headers=headers) as session:
+		await session.post(url=send_message, data=post_data)
+
+
+async def del_message(data):
+	post_data = json.dumps({
+		"chat_id": data["message"]["from"]["id"],
+		"message_id": data["message"]["message_id"] + 1
+	})
+	async with ClientSession(headers=headers) as session:
+		await session.post(url=delete_message, data=post_data)
