@@ -5,6 +5,7 @@ from datetime import datetime
 from aiohttp import ClientSession
 from lxml import html
 
+from app.cache.redis_actions import check_redis_key, save_to_redis
 from config.settings import BOT_TOKEN
 
 logger = logging.getLogger(__name__)
@@ -56,14 +57,12 @@ async def euro_rates(data, request):
 	keyboard = await keyboard_render(buttons_list=[["Курс евро 💶"], ["Курс доллара 💵"]])
 	text = await render_exchange_text()
 
-	await wait_message(data=data)
-
 	redis_data = await check_redis_key(redis_key="euro_rates", request=request)
 	if redis_data:
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
 			"text": text.format(
-				date=datetime.now().strftime("%d.%m.%Y %H:%M"),
+				date=redis_data["date"],
 				cb=redis_data["cbr"],
 				tinkoff=redis_data["tinkoff"],
 				sberbank=redis_data["sberbank"],
@@ -107,10 +106,11 @@ async def euro_rates(data, request):
 
 		spbbank_euro_rate = html.fromstring(spb_bank_page).xpath('//div[@class="bank-currency__info-val"]/text()')[1].replace(",", ".")
 
+		now = datetime.now().strftime("%d.%m.%Y %H:%M")
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
 			"text": text.format(
-				date=datetime.now().strftime("%d.%m.%Y %H:%M"),
+				date=now,
 				cb=cbr_rate_euro,
 				tinkoff=tinkoff_euro_rate,
 				sberbank=sberbank_euro_rate,
@@ -125,6 +125,7 @@ async def euro_rates(data, request):
 			await session.post(url=send_message, data=post_data)
 
 		data_rates = {
+			"date": now,
 			"cbr": cbr_rate_euro,
 			"tinkoff": tinkoff_euro_rate,
 			"sberbank": sberbank_euro_rate,
@@ -133,21 +134,17 @@ async def euro_rates(data, request):
 		}
 		await save_to_redis(redis_key="euro_rates", data_rates=data_rates, request=request)
 
-	await del_message(data=data)
-
 
 async def dollar_rates(data, request):
 	keyboard = await keyboard_render(buttons_list=[["Курс евро 💶"], ["Курс доллара 💵"]])
 	text = await render_exchange_text()
-
-	await wait_message(data=data)
 
 	redis_data = await check_redis_key(redis_key="dollar_rates", request=request)
 	if redis_data:
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
 			"text": text.format(
-				date=datetime.now().strftime("%d.%m.%Y %H:%M"),
+				date=redis_data["date"],
 				cb=redis_data["cbr"],
 				tinkoff=redis_data["tinkoff"],
 				sberbank=redis_data["sberbank"],
@@ -191,6 +188,7 @@ async def dollar_rates(data, request):
 
 		spbbank_dollar_rate = html.fromstring(spb_bank_page).xpath('//div[@class="bank-currency__info-val"]/text()')[1].replace(",", ".")
 
+		now = datetime.now().strftime("%d.%m.%Y %H:%M")
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
 			"text": text.format(
@@ -209,6 +207,7 @@ async def dollar_rates(data, request):
 			await session.post(url=send_message, data=post_data)
 
 		data_rates = {
+			"date": now,
 			"cbr": cbr_rate_dollar,
 			"tinkoff": tinkoff_dollar_rate,
 			"sberbank": sberbank_dollar_rate,
@@ -217,25 +216,6 @@ async def dollar_rates(data, request):
 		}
 
 		await save_to_redis(redis_key="dollar_rates", data_rates=data_rates, request=request)
-
-	await del_message(data=data)
-
-
-async def check_redis_key(redis_key, request):
-	redis_conn = request.app["redis"]
-	with await redis_conn as redis_con:
-		if await redis_con.exists(redis_key) == 1:
-			return await redis_con.hgetall(redis_key, encoding="utf-8")
-		else:
-			return 0
-
-
-async def save_to_redis(redis_key, data_rates, request):
-	redis_conn = request.app["redis"]
-	with await redis_conn as redis_con:
-		await redis_con.hmset_dict(redis_key, data_rates)
-		await redis_con.expire(redis_key, 60)
-	return 0
 
 
 async def keyboard_render(buttons_list: list):
@@ -253,21 +233,3 @@ async def render_exchange_text():
 	       "Банк ВТБ: <b>{vtb} ₽</b>\n" \
 	       "Банк Санкт-Петербург: <b>{spbbank} ₽</b>\n\n" \
 	       "Все банки: {all_banks}"
-
-
-async def wait_message(data):
-	post_data = json.dumps({
-		"chat_id": data["message"]["from"]["id"],
-		"text": "Собираю информацию по курсу..."
-	})
-	async with ClientSession(headers=headers) as session:
-		await session.post(url=send_message, data=post_data)
-
-
-async def del_message(data):
-	post_data = json.dumps({
-		"chat_id": data["message"]["from"]["id"],
-		"message_id": data["message"]["message_id"] + 1
-	})
-	async with ClientSession(headers=headers) as session:
-		await session.post(url=delete_message, data=post_data)
