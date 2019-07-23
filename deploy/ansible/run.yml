@@ -1,0 +1,6 @@
+- hosts: nodes
+  gather_facts: False
+  user: anton
+  become: yes
+  roles:
+    - {role: common, tags: "common"}

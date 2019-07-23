@@ -1,14 +1,17 @@
+#!/usr/bin/python3.6
+
 import json
 import logging
 import time
 from datetime import datetime
 
+import aioredis
 import asyncio
 import uvloop
 from aiohttp import ClientSession
 from lxml import html
 
-from app.cache.redis_actions import save_to_redis_background
+from config.settings import DATABASES
 
 logger = logging.getLogger(__name__)
 
@@ -108,3 +111,13 @@ if __name__ == '__main__':
 		print(time.time() - start)
 	except Exception as e:
 		logger.exception(e)
+
+
+async def save_to_redis_background(redis_key, data_rates):
+	redis_conn = await aioredis.create_redis(
+		"redis://{HOST}:{PORT}/0".format(**DATABASES["redis"]),
+
+	)
+	await redis_conn.hmset_dict(redis_key, data_rates)
+	await redis_conn.expire(redis_key, 60)
+	return 0
