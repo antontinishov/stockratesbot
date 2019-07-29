@@ -1,0 +1,4 @@
+REDIS_HOST=redis
+
+* * * * * cd /docker/stockratesbot && python3.6 -m cronjobs.parse_stockrates > /proc/1/fd/1 2>/proc/1/fd/2
+

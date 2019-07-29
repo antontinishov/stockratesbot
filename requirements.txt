@@ -1,10 +1,13 @@
 aiohttp==3.5.4
+aioredis==1.2.0
 async-timeout==3.0.1
 asyncio==3.4.3
 attrs==19.1.0
 chardet==3.0.4
+hiredis==1.0.0
 idna==2.8
 idna-ssl==1.1.0
+lxml==4.4.0
 multidict==4.5.2
 typing-extensions==3.7.4
 uvloop==0.12.2
