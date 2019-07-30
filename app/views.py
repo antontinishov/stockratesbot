@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 
 from aiohttp import ClientSession
 
@@ -14,7 +15,12 @@ send_message = "{}sendMessage".format(base_url)
 headers = {'content-type': 'application/json'}
 
 
-async def start(data):
+async def start(data, request):
+	user_id = data["message"]["from"]["id"]
+	username = data["message"]["from"]["username"]
+	first_name = data["message"]["from"]["first_name"]
+	now = datetime.now()
+
 	keyboard = await keyboard_render(buttons_list=[["Курс евро 💶"], ["Курс доллара 💵"]])
 	try:
 		post_data = json.dumps({
@@ -27,6 +33,17 @@ async def start(data):
 		})
 		async with ClientSession(headers=headers) as session:
 			await session.post(url=send_message, data=post_data)
+
+		db_conn = request.app["postgres"]
+		async with db_conn.acquire() as con:
+			async with con.transaction():
+				user_exists = await con.fetchrow("SELECT id from users where user_id=$1", user_id)
+				if not user_exists:
+					await con.execute("INSERT INTO users (user_id, username, first_name, date)"
+					                  "VALUES ($1, $2, $3, $4)",
+					                  user_id, username, first_name, now
+					)
+
 	except Exception as exc:
 		logger.exception(exc)
 

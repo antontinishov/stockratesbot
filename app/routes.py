@@ -18,7 +18,7 @@ async def internal_route(request):
 			if body:
 				user_request = data["message"]["text"]
 				if "/start" in user_request:
-					await start(data=data)
+					await start(data=data, request=request)
 				elif "Курс евро 💶" in user_request:
 					await euro_rates(data=data, request=request)
 				elif "Курс доллара 💵" in user_request:

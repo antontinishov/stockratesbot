@@ -23,10 +23,8 @@ services:
     build:
       context: .
       dockerfile: docker/app_Dockerfile/Dockerfile
-    environment:
-        DEBUG: ${DEBUG}
-        BOT_TOKEN: ${BOT_TOKEN}
-        REDIS_HOST: ${REDIS_HOST}
+    env_file:
+      - .env
     ports:
       - "8080:8080"
     links:
