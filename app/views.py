@@ -15,14 +15,14 @@ headers = {'content-type': 'application/json'}
 
 
 async def start(data):
-	keyboard = await keyboard_render(buttons_list=[["Курсы валют 💹"], ["Курсы акций 📈"]])
+	keyboard = await keyboard_render(buttons_list=[["Курс евро 💶"], ["Курс доллара 💵"]])
 	try:
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
 			"text": "{}, добро пожаловать в бота!\n\n"
-			        "С моей помощью ты cможешь быстро узнать "
-			        "\n - курсы валют 💹"
-			        "\n - котировки акций основных российских компаний 🇷🇺".format(data["message"]["from"]["first_name"]),
+			        "С моей помощью ты cможешь быстро узнать курсы валютных пар\n\n"
+			        "- 🇪🇺EUR/🇷🇺RUB\n"
+			        "- 🇺🇸USD/🇷🇺RUB".format(data["message"]["from"]["first_name"]),
 			"reply_markup": keyboard
 		})
 		async with ClientSession(headers=headers) as session:
@@ -32,25 +32,11 @@ async def start(data):
 
 
 async def incorrect_request(data):
-	keyboard = await keyboard_render(buttons_list=[["Курсы валют 💹"], ["Курсы акций 📈"]])
-	try:
-		post_data = json.dumps({
-			"chat_id": data["message"]["from"]["id"],
-			"text": "Ваш запрос мне непонятен 😔 \nПока что я могу предоставить информацию только по котировкам валют и акций",
-			"reply_markup": keyboard
-		})
-		async with ClientSession(headers=headers) as session:
-			await session.post(url=send_message, data=post_data)
-	except Exception as exc:
-		logger.exception(exc)
-
-
-async def exchange_rates(data):
 	keyboard = await keyboard_render(buttons_list=[["Курс евро 💶"], ["Курс доллара 💵"]])
 	try:
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
-			"text": "Выбери интересующий курс валюты",
+			"text": "Ваш запрос мне непонятен 😔 \nПока что я могу предоставить информацию только по котировкам валют",
 			"reply_markup": keyboard
 		})
 		async with ClientSession(headers=headers) as session:
@@ -151,6 +137,10 @@ async def render_exchange_text():
 
 
 async def send_redis_data(data, currency, text, keyboard, redis_data):
+	if currency == "dollar":
+		_c = "usd"
+	else:
+		_c = "eur"
 	try:
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
@@ -162,7 +152,7 @@ async def send_redis_data(data, currency, text, keyboard, redis_data):
 				sberbank=redis_data["sberbank"],
 				vtb=redis_data["vtb"],
 				spbbank=redis_data["spbbank"],
-				all_banks="https://www.banki.ru/products/currency/cash/usd/sankt-peterburg/#sort=sale&order=asc"),
+				all_banks="https://www.banki.ru/products/currency/cash/{}/sankt-peterburg/#sort=sale&order=asc".format(_c)),
 			"parse_mode": "HTML",
 			"disable_web_page_preview": True,
 			"reply_markup": keyboard
