@@ -11,7 +11,12 @@ async def internal_route(request):
 	if request.method == "POST":
 		try:
 			body = await request.text()
-			data = json.loads(body, encoding="utf-8")
+			try:
+				data = json.loads(body, encoding="utf-8")
+			except json.decoder.JSONDecodeError as exc:
+				send_logging(exception=exc)
+				return web.Response(status=200)
+
 			if "text" not in data["message"].keys():
 				await incorrect_request(data=data, request=request)
 				return web.Response(status=200)
@@ -33,8 +38,8 @@ async def internal_route(request):
 					await incorrect_request(data=data, request=request)
 			else:
 				return web.Response(status=204)
-		except Exception as e:
-			logger.exception(e)
+		except Exception as exc:
+			send_logging(exception=exc)
 
 		return web.Response(status=200)
 	else:

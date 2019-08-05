@@ -5,7 +5,7 @@ import logging
 import os
 import time
 from datetime import datetime
-
+from config.logging import send_logging
 import aioredis
 import asyncio
 import asyncpg
@@ -60,7 +60,7 @@ async def save_to_redis(redis_key, data_rates):
 		await redis_conn.hmset_dict(redis_key, data_rates)
 		await redis_conn.expire(redis_key, 60)
 	except Exception as exc:
-		logger.exception(exc)
+		send_logging(exception=exc)
 	return 0
 
 
@@ -80,7 +80,7 @@ async def save_to_postgres(data_rates, rate):
 			            data_rates["spbbank"]
 			            )
 	except Exception as exc:
-		logger.exception(exc)
+		send_logging(exception=exc)
 	return True
 
 
@@ -122,7 +122,7 @@ async def save_euro_rates():
 		if now_time.minute == 0 and now_time.hour < 22:
 			await save_to_postgres(data_rates=data_rates, rate="euro")
 	except Exception as exc:
-		logger.exception(exc)
+		send_logging(exception=exc)
 
 
 async def save_dollar_rates():
@@ -164,7 +164,7 @@ async def save_dollar_rates():
 		if now_time.minute == 0 and 10 < now_time.hour < 18:
 			await save_to_postgres(data_rates=data_rates, rate="dollar")
 	except Exception as exc:
-		logger.exception(exc)
+		send_logging(exception=exc)
 
 
 if __name__ == '__main__':
@@ -176,4 +176,4 @@ if __name__ == '__main__':
 		app_loop.run_until_complete(save_dollar_rates())
 		print("Saved currencies for {date} Execution time: {time} sec".format(date=now, time=round(time.time() - start, 2)))
 	except Exception as exc:
-		logger.exception(exc)
+		send_logging(exception=exc)

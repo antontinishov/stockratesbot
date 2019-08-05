@@ -7,7 +7,7 @@ import uvloop
 from aiohttp import web
 
 from app.routes import setup_routes
-from config.settings import DEBUG, DATABASES
+from config.settings import DEBUG, DATABASES, SENTRY_DSN
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,10 @@ def init_application(app_loop):
 
 if __name__ == '__main__':
 	try:
+		if not DEBUG:
+			import sentry_sdk
+			sentry_sdk.init(SENTRY_DSN)
+
 		web_app = init_application(app_loop=loop)
 		web_app.on_startup.append(redis_connection_pool)
 		web_app.on_startup.append(postgres_connection_pool)

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from aiohttp import ClientSession
 
 from app.cache.redis_actions import check_redis_key
+from config.logging import send_logging
 from config.settings import BOT_TOKEN
 from cronjobs.parse_stockrates import save_euro_rates, save_dollar_rates
 
@@ -55,7 +56,7 @@ async def start(data, request):
 				)
 
 	except Exception as exc:
-		logger.exception(exc)
+		send_logging(exception=exc)
 
 
 async def incorrect_request(data, request):
@@ -96,7 +97,7 @@ async def incorrect_request(data, request):
 				                  now, message, user_id
 				                  )
 	except Exception as exc:
-		logger.exception(exc)
+		send_logging(exception=exc)
 
 
 async def euro_rates(data, request):
@@ -133,7 +134,7 @@ async def euro_rates(data, request):
 				async with ClientSession(headers=headers) as session:
 					await session.post(url=send_message, data=post_data)
 	except Exception as exc:
-		logger.exception(exc)
+		send_logging(exception=exc)
 
 
 async def dollar_rates(data, request):
@@ -170,7 +171,7 @@ async def dollar_rates(data, request):
 				async with ClientSession(headers=headers) as session:
 					await session.post(url=send_message, data=post_data)
 	except Exception as exc:
-		logger.exception(exc)
+		send_logging(exception=exc)
 
 
 async def rates_analytics(data):
@@ -185,12 +186,11 @@ async def rates_analytics(data):
 		async with ClientSession(headers=headers) as session:
 			await session.post(url=send_message, data=post_data)
 	except Exception as exc:
-		logger.exception(exc)
+		send_logging(exception=exc)
 
 
 async def analytics_message(data):
 	currency = data["message"]["text"].lower()
-	print(currency)
 	if currency == "евро":
 		emoji = "🇪🇺"
 	elif currency == "доллар":
@@ -214,7 +214,7 @@ async def analytics_message(data):
 		async with ClientSession(headers=headers) as session:
 			await session.post(url=send_message, data=post_data)
 	except Exception as e:
-		logger.exception(e)
+		send_logging(exception=e)
 
 
 async def analytics_for_period(data, request):
@@ -283,7 +283,7 @@ async def analytics_for_period(data, request):
 		async with ClientSession(headers=headers) as session:
 			await session.post(url=send_message, data=post_data)
 	except Exception as e:
-		logger.exception(e)
+		send_logging(exception=e)
 
 
 async def render_delta(_delta):
@@ -354,4 +354,4 @@ async def send_redis_data(data, currency, text, keyboard, redis_data):
 		async with ClientSession(headers=headers) as session:
 			await session.post(url=send_message, data=post_data)
 	except Exception as exc:
-		logger.exception(exc)
+		send_logging(exception=exc)

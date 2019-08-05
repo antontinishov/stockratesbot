@@ -5,7 +5,7 @@ DEBUG = os.environ["DEBUG"]
 DEBUG = DEBUG.lower() == "true"
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-
+SENTRY_DSN = os.environ["SENTRY_DSN"]
 
 DATABASES = {
 	"redis": {
