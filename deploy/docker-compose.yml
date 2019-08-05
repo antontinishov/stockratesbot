@@ -1,19 +1,19 @@
 version: "3"
 services:
-#  nginx:
-#    container_name: nginx
-#    hostname: nginx
-#    networks:
-#      - stockratesbot
-#    image: nginx:1.17.1-alpine
-#    ports:
-#     - "443:443"
-#    volumes:
-#     - /etc/letsencrypt:/etc/nginx/ssl
-#     - /docker/stockratesbot/deploy/default.conf:/etc/nginx/conf.d/default.conf
-#    links:
-#      - "stockratesbot"
-#    restart: always
+  nginx:
+    container_name: nginx
+    hostname: nginx
+    networks:
+      - stockratesbot
+    image: nginx:1.17.1-alpine
+    ports:
+     - "443:443"
+    volumes:
+     - /etc/letsencrypt/live/antont.site:/etc/nginx/ssl
+     - /docker/stockratesbot/deploy/default.conf:/etc/nginx/conf.d/default.conf
+    links:
+      - "stockratesbot"
+    restart: always
 
   stockratesbot:
     container_name: stockratesbot
@@ -25,8 +25,8 @@ services:
       dockerfile: docker/app_Dockerfile/Dockerfile
     env_file:
       - .env
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     links:
       - "redis"
     restart: always

@@ -1,0 +1,75 @@
+- block:
+  - name: Setup postgresql repo
+    shell: echo "deb http://apt.postgresql.org/pub/repos/apt/ xenial-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
+           wget --quiet -O - http://apt.postgresql.org/pub/repos/apt/ACCC4CF8.asc | sudo apt-key add -
+
+  - name: Install Postgresql 9.6
+    apt:
+      name: postgresql-9.6
+      state: present
+      autoclean: yes
+      update_cache: yes
+
+  - name: Copy pg_hba.conf file
+    template:
+      src: pg_hba.conf.j2
+      dest: /etc/postgresql/9.6/main/pg_hba.conf
+
+  - name: Copy postgresql.conf file
+    template:
+      src: postgresql.conf.j2
+      dest: /etc/postgresql/9.6/main/postgresql.conf
+
+  - name: Restart postgresql
+    service:
+      name: postgresql
+      state: restarted
+
+  - name: Set postgres user password
+    become: yes
+    become_method: sudo
+    become_user: postgres
+    shell: psql -c "ALTER USER postgres WITH PASSWORD '{{postgres_password}}';"
+  tags: install_db
+
+- block:
+  - name: Install dependencies
+    pip:
+      name: psycopg2-binary
+
+  - name: Create database
+    become: yes
+    become_method: sudo
+    become_user: postgres
+    postgresql_db:
+      name: '{{db_name}}'
+      encoding: UTF-8
+
+  - name: Create db user
+    become: yes
+    become_method: sudo
+    become_user: postgres
+    postgresql_user:
+      db: '{{db_name}}'
+      name: '{{db_postgres_user}}'
+      password: '{{db_postgres_password}}'
+      role_attr_flags: CREATEDB,SUPERUSER
+      priv: ALL
+      state: present
+
+  - name: Copy sql script on remote
+    copy:
+      src: files/sql/db.sql
+      dest: /home/anton/db.sql
+      backup: yes
+
+  - name: Run sql script
+    become: yes
+    become_method: sudo
+    become_user: postgres
+    postgresql_query:
+      db: '{{db_name}}'
+      login_user: '{{db_postgres_user}}'
+      login_password: '{{db_postgres_password}}'
+      path_to_script: /home/anton/db.sql
+  tags: create_db

@@ -8,6 +8,7 @@ from datetime import datetime
 
 import aioredis
 import asyncio
+import asyncpg
 import uvloop
 from aiohttp import ClientSession
 from lxml import html
@@ -19,6 +20,13 @@ DATABASES = {
 	"redis": {
 		"HOST": os.environ["REDIS_HOST"],
 		"PORT": 6379
+	},
+	"postgres": {
+		"HOST": os.environ["DB_HOST"],
+		"PORT": os.environ["DB_PORT"],
+		"NAME": os.environ["DB_NAME"],
+		"USER": os.environ["DB_USER"],
+		"PASSWORD": os.environ["DB_PASSWORD"]
 	}
 }
 
@@ -39,10 +47,11 @@ exchange_rates_dict = {
 	}
 }
 
-now = datetime.now().strftime("%d.%m.%Y %H:%M")
+now_time = datetime.now()
+now = now_time.strftime("%d.%m.%Y %H:%M")
 
 
-async def save_to_redis_background(redis_key, data_rates):
+async def save_to_redis(redis_key, data_rates):
 	try:
 		redis_conn = await aioredis.create_redis(
 			"redis://{HOST}:{PORT}/0".format(**DATABASES["redis"]),
@@ -53,6 +62,26 @@ async def save_to_redis_background(redis_key, data_rates):
 	except Exception as exc:
 		logger.exception(exc)
 	return 0
+
+
+async def save_to_postgres(data_rates, rate):
+	try:
+		db_conn = await asyncpg.connect(
+			dsn="postgres://{USER}:{PASSWORD}@{HOST}:{PORT}/{NAME}".format(**DATABASES["postgres"]),
+		)
+		async with db_conn.transaction():
+			await db_conn.execute("INSERT INTO rates (rate, cbr, tinkoff, sberbank, vtb, spbbank)"
+			            "VALUES ($1, $2, $3, $4, $5, $6)",
+			            rate,
+			            data_rates["cbr"],
+			            data_rates["tinkoff"],
+			            data_rates["sberbank"],
+			            data_rates["vtb"],
+			            data_rates["spbbank"]
+			            )
+	except Exception as exc:
+		logger.exception(exc)
+	return True
 
 
 async def save_euro_rates():
@@ -89,7 +118,9 @@ async def save_euro_rates():
 			"vtb": vtb_euro_rate,
 			"spbbank": spbbank_euro_rate
 		}
-		await save_to_redis_background(redis_key="euro_rates", data_rates=data_rates)
+		await save_to_redis(redis_key="euro_rates", data_rates=data_rates)
+		if now_time.minute == 0 and now_time.hour < 22:
+			await save_to_postgres(data_rates=data_rates, rate="euro")
 	except Exception as exc:
 		logger.exception(exc)
 
@@ -129,7 +160,9 @@ async def save_dollar_rates():
 			"spbbank": spbbank_dollar_rate
 		}
 
-		await save_to_redis_background(redis_key="dollar_rates", data_rates=data_rates)
+		await save_to_redis(redis_key="dollar_rates", data_rates=data_rates)
+		if now_time.minute == 0 and 10 < now_time.hour < 18:
+			await save_to_postgres(data_rates=data_rates, rate="dollar")
 	except Exception as exc:
 		logger.exception(exc)
 
@@ -141,6 +174,6 @@ if __name__ == '__main__':
 		app_loop = asyncio.get_event_loop()
 		app_loop.run_until_complete(save_euro_rates())
 		app_loop.run_until_complete(save_dollar_rates())
-		print("Saved currencies for {date}. Execution time: {time} sec".format(date=now, time=round(time.time() - start, 2)))
+		print("Saved currencies for {date} Execution time: {time} sec".format(date=now, time=round(time.time() - start, 2)))
 	except Exception as exc:
 		logger.exception(exc)
