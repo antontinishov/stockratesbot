@@ -1,4 +1,6 @@
-provider "azurerm" { }
+provider "azurerm" {
+  version = "=1.32.1"
+}
 
 data "azurerm_resource_group" "prod" {
   name = "${var.resource_group}"
@@ -19,7 +21,7 @@ resource "azurerm_public_ip" "prod" {
   name                = "${var.nodename}IP"
   location            = "${data.azurerm_resource_group.prod.location}"
   resource_group_name = "${data.azurerm_resource_group.prod.name}"
-  public_ip_address_allocation = "static"
+  allocation_method   = "Static"
 }
 
 data "azurerm_network_security_group" "prod" {
