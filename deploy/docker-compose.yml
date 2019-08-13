@@ -29,6 +29,9 @@ services:
       - "8080"
     links:
       - "redis"
+    depends_on:
+      - "redis"
+    command: ["/docker/stockratesbot/wait-for-it.sh", "redis:6379", "--", "/bin/bash", "-c", "python3.6 /docker/stockratesbot/main.py"]
     restart: always
 
   cronjobs:
