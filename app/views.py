@@ -255,6 +255,7 @@ async def analytics_for_period(data, request):
 		first_rate = period[0]
 		last_rate = period[-1]
 
+		cbr_delta = last_rate["cbr"] - first_rate["cbr"]
 		tinkoff_delta = last_rate["tinkoff"] - first_rate["tinkoff"]
 		sberbank_delta = last_rate["sberbank"] - first_rate["sberbank"]
 		vtb_delta = last_rate["vtb"] - first_rate["vtb"]
@@ -269,8 +270,9 @@ async def analytics_for_period(data, request):
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
 			"text": text.format(
-				currency="евро" if currency == "euro" else "доллара",
+				currency="евро" if currency == "euro" else "доллару",
 				date=now.strftime("%d.%m.%Y"),
+				cbr=await render_delta(_delta=cbr_delta),
 				tinkoff=await render_delta(_delta=tinkoff_delta),
 				sberbank=await render_delta(_delta=sberbank_delta),
 				vtb=await render_delta(_delta=vtb_delta),
@@ -314,6 +316,7 @@ async def keyboard_render(buttons_list: list):
 
 async def render_analytics_text():
 	return "Аналитика по {currency} за {date}\n\n" \
+		   "ЦБ: <b>{cbr} ₽</b>\n" \
 	       "Тинькофф Банк: <b>{tinkoff} ₽</b>\n" \
 	       "Сбербанк: <b>{sberbank} ₽</b>\n" \
 	       "Банк ВТБ: <b>{vtb} ₽</b>\n" \
