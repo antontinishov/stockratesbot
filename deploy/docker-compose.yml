@@ -20,9 +20,7 @@ services:
     hostname: stockratesbot
     networks:
       - stockratesbot
-    build:
-      context: .
-      dockerfile: docker/app_Dockerfile/Dockerfile
+    image: devdevregistry.azurecr.io/stockratesbot:latest
     env_file:
       - .env
     expose:
