@@ -1,4 +1,4 @@
-FROM zartug345/stockratesbot:latest
+FROM devdevregistry.azurecr.io/stockratesbot:latest
 
 #USER www-data
 
