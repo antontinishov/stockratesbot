@@ -44,13 +44,13 @@ exchange_rates_dict = {
 		"sberbank_url": "https://www.sravni.ru/bank/sberbank-rossii/valjuty/eur/",
 		"vtb_url": "https://www.vtb.ru/api/currency-exchange/table-info?contextItemId=%7BC5471052-2291-4AFD-9C2D-1DBC40A4769D%7D&conversionPlace=1&conversionType=1&renderingId=ede2e4d0-eb6b-4730-857b-06fd4975c06b&renderingParams=LegalStatus__%7BF2A32685-E909-44E8-A954-1E206D92FFF8%7D;IsFromRuble__1;CardMaxPeriodDays__5;CardRecordsOnPage__5;ConditionsUrl__%2Fpersonal%2Fplatezhi-i-perevody%2Fobmen-valjuty%2Fspezkassy%2F",
 		"spbbank_url": "https://www.sravni.ru/bank/bank-sankt-peterburg/valjuty/eur/",
-	},
+		},
 	"dollar_rates": {
 		"tinkoff_api": "https://api.tinkoff.ru/v1/currency_rates?from=USD&to=RUB",
 		"sberbank_url": "https://www.sravni.ru/bank/sberbank-rossii/valjuty/usd/",
 		"vtb_url": "https://www.vtb.ru/api/currency-exchange/table-info?contextItemId=%7BC5471052-2291-4AFD-9C2D-1DBC40A4769D%7D&conversionPlace=1&conversionType=1&renderingId=ede2e4d0-eb6b-4730-857b-06fd4975c06b&renderingParams=LegalStatus__%7BF2A32685-E909-44E8-A954-1E206D92FFF8%7D;IsFromRuble__1;CardMaxPeriodDays__5;CardRecordsOnPage__5;ConditionsUrl__%2Fpersonal%2Fplatezhi-i-perevody%2Fobmen-valjuty%2Fspezkassy%2F",
 		"spbbank_url": "https://www.sravni.ru/bank/bank-sankt-peterburg/valjuty/usd/",
-	}
+	},
 }
 
 
@@ -81,10 +81,10 @@ async def save_to_postgres(data_rates, rate):
 			            "VALUES ($1, $2, $3, $4, $5, $6)",
 			            rate,
 			            data_rates["cbr"],
-			            data_rates["tinkoff"],
-			            data_rates["sberbank"],
-			            data_rates["vtb"],
-			            data_rates["spbbank"]
+			            data_rates["rub_to_euro"]["tinkoff"],
+			            data_rates["rub_to_euro"]["sberbank"],
+			            data_rates["rub_to_euro"]["vtb"],
+			            data_rates["rub_to_euro"]["spbbank"]
 			            )
 	except Exception as exc:
 		capture_exception(exc)
@@ -105,6 +105,7 @@ async def save_euro_rates():
 			async with session.get(url=exchange_rates_dict["euro_rates"]["spbbank_url"]) as resp:
 				spb_bank_page = await resp.text()
 
+		# from RUB to EUR
 		cbr_rate_euro = round(json.loads(cbr_answer)["Valute"]["EUR"]["Value"], 2)
 
 		tinkoff_euro_rates = tinkoff_api_answer_eur["payload"]["rates"]
@@ -117,13 +118,27 @@ async def save_euro_rates():
 
 		spbbank_euro_rate = html.fromstring(spb_bank_page).xpath('//div[@class="bank-currency__info-val"]/text()')[1].replace(",", ".")
 
+		# from EUR to RUB
+		tinkoff_euro_to_rub = "{:.2f}".format(next(item["buy"] for item in tinkoff_euro_rates if item["category"] == "DebitCardsTransfers"))
+		sberbank_euro_to_rub = html.fromstring(sberbank_euro_page).xpath('//div[@class="bank-currency__info-val"]/text()')[0].replace(",", ".")
+		vtb_euro_to_rub = "{:.2f}".format(next(item["BankBuyAt"] for item in vtb_euro_rates["MoneyRates"]))
+		spbbank_euro_to_rub = html.fromstring(spb_bank_page).xpath('//div[@class="bank-currency__info-val"]/text()')[0].replace(",", ".")
+
 		data_rates = {
 			"date": now,
 			"cbr": cbr_rate_euro,
-			"tinkoff": tinkoff_euro_rate,
-			"sberbank": sberbank_euro_rate,
-			"vtb": vtb_euro_rate,
-			"spbbank": spbbank_euro_rate
+			"rub_to_euro": {
+				"tinkoff": tinkoff_euro_rate,
+				"sberbank": sberbank_euro_rate,
+				"vtb": vtb_euro_rate,
+				"spbbank": spbbank_euro_rate
+			},
+			"euro_to_rub": {
+				"tinkoff": tinkoff_euro_to_rub,
+				"sberbank": sberbank_euro_to_rub,
+				"vtb": vtb_euro_to_rub,
+				"spbbank": spbbank_euro_to_rub
+			}
 		}
 		await save_to_redis(redis_key="euro_rates", data_rates=data_rates)
 		if now_time.minute == 0 and now_time.hour < 22:

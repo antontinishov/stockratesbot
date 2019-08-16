@@ -294,7 +294,7 @@ async def render_delta(_delta):
 	elif _delta > 0:
 		delta = "📈 +{:.2f}".format(_delta)
 	else:
-		delta = "{:.2f}".format(_delta)
+		delta = 0
 	return delta
 
 
@@ -326,18 +326,19 @@ async def render_analytics_text():
 async def render_exchange_text():
 	return "Курс {currency} на {date}\n" \
 	       "ЦБ: <b>{cbr} ₽</b>\n\n" \
-	       "Тинькофф Банк: <b>{tinkoff} ₽</b>\n" \
-	       "Сбербанк: <b>{sberbank} ₽</b>\n" \
-	       "Банк ВТБ: <b>{vtb} ₽</b>\n" \
-	       "Банк Санкт-Петербург: <b>{spbbank} ₽</b>\n\n" \
-	       "Все банки: {all_banks}"
+	       "₽ → € | € → ₽\n" \
+	       "Тинькофф Банк: <b>{tinkoff} ₽</b> | <b>{tinkoff_to_rub} ₽</b>\n" \
+	       "Сбербанк: <b>{sberbank} ₽</b> | <b>{sberbank_to_rub} ₽</b>\n" \
+	       "Банк ВТБ: <b>{vtb} ₽</b> | <b>{vtb_to_rub} ₽</b>\n" \
+	       "Банк Санкт-Петербург: <b>{spbbank} ₽</b> | <b>{spbbank_to_rub} ₽</b>\n\n"
+	       # "Все банки: {all_banks}"
 
 
 async def send_redis_data(data, currency, text, keyboard, redis_data):
 	if currency == "dollar":
 		_c = "usd"
 	else:
-		_c = "eur"
+		_c = "euro"
 	try:
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
@@ -345,11 +346,15 @@ async def send_redis_data(data, currency, text, keyboard, redis_data):
 				currency=currency,
 				date=redis_data["date"],
 				cbr=redis_data["cbr"],
-				tinkoff=redis_data["tinkoff"],
-				sberbank=redis_data["sberbank"],
-				vtb=redis_data["vtb"],
-				spbbank=redis_data["spbbank"],
-				all_banks="https://www.banki.ru/products/currency/cash/{}/sankt-peterburg/#sort=sale&order=asc".format(_c)),
+				tinkoff=redis_data["rub_to_{}".format(_c)]["tinkoff"],
+				tinkoff_to_rub=redis_data["{}_to_rub".format(_c)]["tinkoff"],
+				sberbank=redis_data["rub_to_{}".format(_c)]["sberbank"],
+				sberbank_to_rub=redis_data["{}_to_rub".format(_c)]["sberbank"],
+				vtb=redis_data["rub_to_{}".format(_c)]["vtb"],
+				vtb_to_rub=redis_data["{}_to_rub".format(_c)]["vtb"],
+				spbbank=redis_data["rub_to_{}".format(_c)]["spbbank"],
+				spbbank_to_rub=redis_data["{}_to_rub".format(_c)]["spbbank"]),
+				# all_banks="https://www.banki.ru/products/currency/cash/{}/sankt-peterburg/#sort=sale&order=asc".format(_c)),
 			"parse_mode": "HTML",
 			"disable_web_page_preview": True,
 			"reply_markup": keyboard
