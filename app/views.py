@@ -7,7 +7,7 @@ from aiohttp import ClientSession
 from app.cache.redis_actions import check_redis_key
 from config.logging import send_logging
 from config.settings import BOT_TOKEN
-from cronjobs.parse_stockrates import save_euro_rates, save_dollar_rates
+from cronjobs.parse_stockrates import save_euro_rates, save_usd_rates
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +34,10 @@ async def start(data, request):
 			"chat_id": data["message"]["from"]["id"],
 			"text": "{}, добро пожаловать в бота!\n\n"
 			        "С моей помощью ты cможешь быстро узнать курсы валютных пар\n\n"
-			        "- 🇪🇺EUR/🇷🇺RUB\n"
-			        "- 🇺🇸USD/🇷🇺RUB".format(data["message"]["from"]["first_name"]),
+			        "🇪🇺EUR/🇷🇺RUB\n"
+			        "🇷🇺RUB/🇪🇺EUR\n\n"
+			        "🇺🇸USD/🇷🇺RUB\n"
+			        "🇷🇺RUB/🇺🇸USD".format(data["message"]["from"]["first_name"]),
 			"reply_markup": keyboard
 		})
 		async with ClientSession(headers=headers) as session:
@@ -106,7 +108,12 @@ async def euro_rates(data, request):
 	try:
 		redis_data = await check_redis_key(redis_key="euro_rates", request=request)
 		if redis_data:
-			await send_redis_data(data=data, currency="евро", text=text, keyboard=keyboard, redis_data=redis_data)
+			await send_redis_data(data=data,
+			                      text_currency="евро",
+			                      currency="euro",
+			                      text=text,
+			                      keyboard=keyboard,
+			                      redis_data=redis_data)
 		else:
 			wait_post_data = json.dumps({
 				"chat_id": data["message"]["from"]["id"],
@@ -122,7 +129,12 @@ async def euro_rates(data, request):
 
 			redis_data = await check_redis_key(redis_key="euro_rates", request=request)
 			if redis_data:
-				await send_redis_data(data=data, currency="евро", text=text, keyboard=keyboard, redis_data=redis_data)
+				await send_redis_data(data=data,
+				                      text_currency="евро",
+				                      currency="euro",
+				                      text=text,
+				                      keyboard=keyboard,
+				                      redis_data=redis_data)
 			else:
 				post_data = json.dumps({
 					"chat_id": data["message"]["from"]["id"],
@@ -137,13 +149,18 @@ async def euro_rates(data, request):
 		send_logging(exception=exc)
 
 
-async def dollar_rates(data, request):
+async def usd_rates(data, request):
 	keyboard = await main_keyboard()
 	text = await render_exchange_text()
 	try:
-		redis_data = await check_redis_key(redis_key="dollar_rates", request=request)
+		redis_data = await check_redis_key(redis_key="usd_rates", request=request)
 		if redis_data:
-			await send_redis_data(data=data, currency="доллара", text=text, keyboard=keyboard, redis_data=redis_data)
+			await send_redis_data(data=data,
+			                      text_currency="доллара",
+			                      currency="usd",
+			                      text=text,
+			                      keyboard=keyboard,
+			                      redis_data=redis_data)
 		else:
 			wait_post_data = json.dumps({
 				"chat_id": data["message"]["from"]["id"],
@@ -155,11 +172,16 @@ async def dollar_rates(data, request):
 			async with ClientSession(headers=headers) as session:
 				await session.post(url=send_message, data=wait_post_data)
 
-			await save_dollar_rates()
+			await save_usd_rates()
 
-			redis_data = await check_redis_key(redis_key="dollar_rates", request=request)
+			redis_data = await check_redis_key(redis_key="usd_rates", request=request)
 			if redis_data:
-				await send_redis_data(data=data, currency="доллара", text=text, keyboard=keyboard, redis_data=redis_data)
+				await send_redis_data(data=data,
+				                      text_currency="доллара",
+				                      currency="usd",
+				                      text=text,
+				                      keyboard=keyboard,
+				                      redis_data=redis_data)
 			else:
 				post_data = json.dumps({
 					"chat_id": data["message"]["from"]["id"],
@@ -226,7 +248,7 @@ async def analytics_for_period(data, request):
 	if emoji == "🇪🇺":
 		currency = "euro"
 	elif emoji == "🇺🇸":
-		currency = "dollar"
+		currency = "usd"
 	else:
 		raise NameError
 
@@ -250,8 +272,21 @@ async def analytics_for_period(data, request):
 		async with db_conn.acquire() as con:
 			async with con.transaction():
 				_period = await con.fetchrow("SELECT json_agg(json_build_object('cbr', rates.cbr, 'tinkoff', rates.tinkoff, 'sberbank', rates.sberbank, 'vtb', rates.vtb, 'spbbank', rates.spbbank)) as values_list from rates where rate='{}' and date between '{}' and '{}'".format(currency, date1, date2))
+		try:
+			period = json.loads(_period["values_list"])
+		except TypeError:
+			keyboard = await main_keyboard()
+			post_data = json.dumps({
+				"chat_id": data["message"]["from"]["id"],
+				"text": "Аналитика временно недоступна",
+				"parse_mode": "HTML",
+				"disable_web_page_preview": True,
+				"reply_markup": keyboard
+			})
+			async with ClientSession(headers=headers) as session:
+				await session.post(url=send_message, data=post_data)
+			return True
 
-		period = json.loads(_period["values_list"])
 		first_rate = period[0]
 		last_rate = period[-1]
 
@@ -324,42 +359,53 @@ async def render_analytics_text():
 
 
 async def render_exchange_text():
-	return "Курс {currency} на {date}\n" \
+	return "Курс {currency} на {date} по МСК\n" \
 	       "ЦБ: <b>{cbr} ₽</b>\n\n" \
-	       "₽ → € | € → ₽\n" \
+	       "₽ → {symbol} | {symbol} → ₽\n" \
 	       "Тинькофф Банк: <b>{tinkoff} ₽</b> | <b>{tinkoff_to_rub} ₽</b>\n" \
 	       "Сбербанк: <b>{sberbank} ₽</b> | <b>{sberbank_to_rub} ₽</b>\n" \
 	       "Банк ВТБ: <b>{vtb} ₽</b> | <b>{vtb_to_rub} ₽</b>\n" \
 	       "Банк Санкт-Петербург: <b>{spbbank} ₽</b> | <b>{spbbank_to_rub} ₽</b>\n\n"
-	       # "Все банки: {all_banks}"
 
 
-async def send_redis_data(data, currency, text, keyboard, redis_data):
-	if currency == "dollar":
+async def send_redis_data(data, text_currency, currency, text, keyboard, redis_data):
+	if currency == "usd":
 		_c = "usd"
+		symbol = "$"
 	else:
 		_c = "euro"
+		symbol = "€"
 	try:
+		to_rub = json.loads(redis_data["{}_to_rub".format(_c)])
+		rub_to = json.loads(redis_data["rub_to_{}".format(_c)])
 		post_data = json.dumps({
 			"chat_id": data["message"]["from"]["id"],
 			"text": text.format(
-				currency=currency,
+				currency=text_currency,
 				date=redis_data["date"],
 				cbr=redis_data["cbr"],
-				tinkoff=redis_data["rub_to_{}".format(_c)]["tinkoff"],
-				tinkoff_to_rub=redis_data["{}_to_rub".format(_c)]["tinkoff"],
-				sberbank=redis_data["rub_to_{}".format(_c)]["sberbank"],
-				sberbank_to_rub=redis_data["{}_to_rub".format(_c)]["sberbank"],
-				vtb=redis_data["rub_to_{}".format(_c)]["vtb"],
-				vtb_to_rub=redis_data["{}_to_rub".format(_c)]["vtb"],
-				spbbank=redis_data["rub_to_{}".format(_c)]["spbbank"],
-				spbbank_to_rub=redis_data["{}_to_rub".format(_c)]["spbbank"]),
-				# all_banks="https://www.banki.ru/products/currency/cash/{}/sankt-peterburg/#sort=sale&order=asc".format(_c)),
+				symbol=symbol,
+				tinkoff=rub_to["tinkoff"],
+				tinkoff_to_rub=to_rub["tinkoff"],
+				sberbank=rub_to["sberbank"],
+				sberbank_to_rub=to_rub["sberbank"],
+				vtb=rub_to["vtb"],
+				vtb_to_rub=to_rub["vtb"],
+				spbbank=rub_to["spbbank"],
+				spbbank_to_rub=to_rub["spbbank"]),
+			"parse_mode": "HTML",
+			"disable_web_page_preview": True,
+			"reply_markup": keyboard
+		})
+		post_data_add = json.dumps({
+			"chat_id": data["message"]["from"]["id"],
+			"text": "Все банки: http://bit.ly/{}_rates".format(_c),
 			"parse_mode": "HTML",
 			"disable_web_page_preview": True,
 			"reply_markup": keyboard
 		})
 		async with ClientSession(headers=headers) as session:
 			await session.post(url=send_message, data=post_data)
+			await session.post(url=send_message, data=post_data_add)
 	except Exception as exc:
 		send_logging(exception=exc)

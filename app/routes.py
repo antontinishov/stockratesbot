@@ -27,7 +27,7 @@ async def internal_route(request):
 				elif "Курс евро 💶" in user_request:
 					await euro_rates(data=data, request=request)
 				elif "Курс доллара 💵" in user_request:
-					await dollar_rates(data=data, request=request)
+					await usd_rates(data=data, request=request)
 				elif "Аналитика 📊" in user_request:
 					await rates_analytics(data=data)
 				elif user_request in ("Евро", "Доллар"):

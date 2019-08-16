@@ -45,7 +45,7 @@ exchange_rates_dict = {
 		"vtb_url": "https://www.vtb.ru/api/currency-exchange/table-info?contextItemId=%7BC5471052-2291-4AFD-9C2D-1DBC40A4769D%7D&conversionPlace=1&conversionType=1&renderingId=ede2e4d0-eb6b-4730-857b-06fd4975c06b&renderingParams=LegalStatus__%7BF2A32685-E909-44E8-A954-1E206D92FFF8%7D;IsFromRuble__1;CardMaxPeriodDays__5;CardRecordsOnPage__5;ConditionsUrl__%2Fpersonal%2Fplatezhi-i-perevody%2Fobmen-valjuty%2Fspezkassy%2F",
 		"spbbank_url": "https://www.sravni.ru/bank/bank-sankt-peterburg/valjuty/eur/",
 		},
-	"dollar_rates": {
+	"usd_rates": {
 		"tinkoff_api": "https://api.tinkoff.ru/v1/currency_rates?from=USD&to=RUB",
 		"sberbank_url": "https://www.sravni.ru/bank/sberbank-rossii/valjuty/usd/",
 		"vtb_url": "https://www.vtb.ru/api/currency-exchange/table-info?contextItemId=%7BC5471052-2291-4AFD-9C2D-1DBC40A4769D%7D&conversionPlace=1&conversionType=1&renderingId=ede2e4d0-eb6b-4730-857b-06fd4975c06b&renderingParams=LegalStatus__%7BF2A32685-E909-44E8-A954-1E206D92FFF8%7D;IsFromRuble__1;CardMaxPeriodDays__5;CardRecordsOnPage__5;ConditionsUrl__%2Fpersonal%2Fplatezhi-i-perevody%2Fobmen-valjuty%2Fspezkassy%2F",
@@ -73,6 +73,8 @@ async def save_to_redis(redis_key, data_rates):
 
 async def save_to_postgres(data_rates, rate):
 	try:
+		# to_rub = json.loads(data_rates["{}_to_rub".format(rate)])
+		rub_to = json.loads(data_rates["rub_to_{}".format(rate)])
 		db_conn = await asyncpg.connect(
 			dsn="postgres://{USER}:{PASSWORD}@{HOST}:{PORT}/{NAME}".format(**DATABASES["postgres"]),
 		)
@@ -81,10 +83,10 @@ async def save_to_postgres(data_rates, rate):
 			            "VALUES ($1, $2, $3, $4, $5, $6)",
 			            rate,
 			            data_rates["cbr"],
-			            data_rates["rub_to_euro"]["tinkoff"],
-			            data_rates["rub_to_euro"]["sberbank"],
-			            data_rates["rub_to_euro"]["vtb"],
-			            data_rates["rub_to_euro"]["spbbank"]
+			            rub_to["tinkoff"],
+			            rub_to["sberbank"],
+			            rub_to["vtb"],
+			            rub_to["spbbank"]
 			            )
 	except Exception as exc:
 		capture_exception(exc)
@@ -105,9 +107,9 @@ async def save_euro_rates():
 			async with session.get(url=exchange_rates_dict["euro_rates"]["spbbank_url"]) as resp:
 				spb_bank_page = await resp.text()
 
-		# from RUB to EUR
 		cbr_rate_euro = round(json.loads(cbr_answer)["Valute"]["EUR"]["Value"], 2)
 
+		# from RUB to EUR
 		tinkoff_euro_rates = tinkoff_api_answer_eur["payload"]["rates"]
 		tinkoff_euro_rate = "{:.2f}".format(next(item["sell"] for item in tinkoff_euro_rates if item["category"] == "DebitCardsTransfers"))
 
@@ -127,18 +129,18 @@ async def save_euro_rates():
 		data_rates = {
 			"date": now,
 			"cbr": cbr_rate_euro,
-			"rub_to_euro": {
+			"rub_to_euro": json.dumps({
 				"tinkoff": tinkoff_euro_rate,
 				"sberbank": sberbank_euro_rate,
 				"vtb": vtb_euro_rate,
 				"spbbank": spbbank_euro_rate
-			},
-			"euro_to_rub": {
+			}),
+			"euro_to_rub": json.dumps({
 				"tinkoff": tinkoff_euro_to_rub,
 				"sberbank": sberbank_euro_to_rub,
 				"vtb": vtb_euro_to_rub,
 				"spbbank": spbbank_euro_to_rub
-			}
+			})
 		}
 		await save_to_redis(redis_key="euro_rates", data_rates=data_rates)
 		if now_time.minute == 0 and now_time.hour < 22:
@@ -147,44 +149,59 @@ async def save_euro_rates():
 		capture_exception(exc)
 
 
-async def save_dollar_rates():
+async def save_usd_rates():
 	try:
 		async with ClientSession() as session:
 			async with session.get(url=exchange_rates_dict["cbr_url"]) as resp:
 				cbr_answer = await resp.text()
-			async with session.get(url=exchange_rates_dict["dollar_rates"]["tinkoff_api"]) as resp:
-				tinkoff_api_answer_dollar = await resp.json()
-			async with session.get(url=exchange_rates_dict["dollar_rates"]["sberbank_url"]) as resp:
-				sberbank_dollar_page = await resp.text()
-			async with session.get(url=exchange_rates_dict["dollar_rates"]["vtb_url"]) as resp:
-				vtb_dollar_answer = await resp.json()
-			async with session.get(url=exchange_rates_dict["dollar_rates"]["spbbank_url"]) as resp:
+			async with session.get(url=exchange_rates_dict["usd_rates"]["tinkoff_api"]) as resp:
+				tinkoff_api_answer_usd = await resp.json()
+			async with session.get(url=exchange_rates_dict["usd_rates"]["sberbank_url"]) as resp:
+				sberbank_usd_page = await resp.text()
+			async with session.get(url=exchange_rates_dict["usd_rates"]["vtb_url"]) as resp:
+				vtb_usd_answer = await resp.json()
+			async with session.get(url=exchange_rates_dict["usd_rates"]["spbbank_url"]) as resp:
 				spb_bank_page = await resp.text()
 
-		cbr_rate_dollar = round(json.loads(cbr_answer)["Valute"]["USD"]["Value"], 2)
+		cbr_rate_usd = round(json.loads(cbr_answer)["Valute"]["USD"]["Value"], 2)
+		
+		# from RUB to USD
+		tinkoff_usd_rates = tinkoff_api_answer_usd["payload"]["rates"]
+		tinkoff_usd_rate = "{0:.2f}".format(next(item["sell"] for item in tinkoff_usd_rates if item["category"] == "DebitCardsTransfers"))
 
-		tinkoff_dollar_rates = tinkoff_api_answer_dollar["payload"]["rates"]
-		tinkoff_dollar_rate = "{0:.2f}".format(next(item["sell"] for item in tinkoff_dollar_rates if item["category"] == "DebitCardsTransfers"))
+		sberbank_usd_rate = html.fromstring(sberbank_usd_page).xpath('//div[@class="bank-currency__info-val"]/text()')[1].replace(",", ".")
 
-		sberbank_dollar_rate = html.fromstring(sberbank_dollar_page).xpath('//div[@class="bank-currency__info-val"]/text()')[1].replace(",", ".")
+		vtb_usd_rates = vtb_usd_answer["GroupedRates"][0]
+		vtb_usd_rate = "{0:.2f}".format(next(item["BankSellAt"] for item in vtb_usd_rates["MoneyRates"]))
 
-		vtb_dollar_rates = vtb_dollar_answer["GroupedRates"][0]
-		vtb_dollar_rate = "{0:.2f}".format(next(item["BankSellAt"] for item in vtb_dollar_rates["MoneyRates"]))
+		spbbank_usd_rate = html.fromstring(spb_bank_page).xpath('//div[@class="bank-currency__info-val"]/text()')[1].replace(",", ".")
 
-		spbbank_dollar_rate = html.fromstring(spb_bank_page).xpath('//div[@class="bank-currency__info-val"]/text()')[1].replace(",", ".")
+		# from USD to RUB
+		tinkoff_usd_to_rub = "{:.2f}".format(next(item["buy"] for item in tinkoff_usd_rates if item["category"] == "DebitCardsTransfers"))
+		sberbank_usd_to_rub = html.fromstring(sberbank_usd_page).xpath('//div[@class="bank-currency__info-val"]/text()')[0].replace(",", ".")
+		vtb_usd_to_rub = "{:.2f}".format(next(item["BankBuyAt"] for item in vtb_usd_rates["MoneyRates"]))
+		spbbank_usd_to_rub = html.fromstring(spb_bank_page).xpath('//div[@class="bank-currency__info-val"]/text()')[0].replace(",", ".")
 
 		data_rates = {
 			"date": now,
-			"cbr": cbr_rate_dollar,
-			"tinkoff": tinkoff_dollar_rate,
-			"sberbank": sberbank_dollar_rate,
-			"vtb": vtb_dollar_rate,
-			"spbbank": spbbank_dollar_rate
+			"cbr": cbr_rate_usd,
+			"rub_to_usd": json.dumps({
+				"tinkoff": tinkoff_usd_rate,
+				"sberbank": sberbank_usd_rate,
+				"vtb": vtb_usd_rate,
+				"spbbank": spbbank_usd_rate
+			}),
+			"usd_to_rub": json.dumps({
+				"tinkoff": tinkoff_usd_to_rub,
+				"sberbank": sberbank_usd_to_rub,
+				"vtb": vtb_usd_to_rub,
+				"spbbank": spbbank_usd_to_rub
+			})
 		}
 
-		await save_to_redis(redis_key="dollar_rates", data_rates=data_rates)
+		await save_to_redis(redis_key="usd_rates", data_rates=data_rates)
 		if now_time.minute == 0 and 10 < now_time.hour < 18:
-			await save_to_postgres(data_rates=data_rates, rate="dollar")
+			await save_to_postgres(data_rates=data_rates, rate="usd")
 	except Exception as exc:
 		capture_exception(exc)
 
@@ -195,7 +212,7 @@ if __name__ == '__main__':
 		asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 		app_loop = asyncio.get_event_loop()
 		app_loop.run_until_complete(save_euro_rates())
-		app_loop.run_until_complete(save_dollar_rates())
+		app_loop.run_until_complete(save_usd_rates())
 		print("Saved currencies for {date} Execution time: {time} sec".format(date=now, time=round(time.time() - start, 2)))
 	except Exception as exc:
 		capture_exception(exc)
